@@ -1,0 +1,167 @@
+<!-- livebook:{"file_entries":[{"name":"day_3_input.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 3
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+```elixir
+day_3_input =
+  Kino.FS.file_path("day_3_input.txt")
+  |> File.read!()
+  |> String.replace("\r", "")
+```
+
+## Part 1 Parser
+
+This is probably one of the goofiest things I have written. This parser increments through the string and if it encounters a digit saves that to a list, and if a symbol a different list. But do to the edge cases, and avoiding writing the general case. I have so many weird assumptions baked in. like if the binary size is 3 then it's a part since part numbers don't get any bigger.
+
+but it works! That's my motto for this year
+
+```elixir
+{part_list, symbol_list} =
+  day_3_input
+  |> String.split("\n")
+  |> Enum.map(&String.to_charlist/1)
+  |> Enum.with_index(0)
+  |> Enum.reduce({[], []}, fn {line, row}, acc ->
+    Enum.reduce(line, {acc, "", 0}, fn char, {{inter_parts, inter_symbols}, inter_str, col} ->
+      nstr = inter_str <> <<char>>
+
+      case nstr do
+        <<part::binary-size(2), other::binary-size(1)>>
+        when other not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+          nsymbols =
+            if String.equivalent?(other, "."),
+              do: inter_symbols,
+              else: [{row, col} | inter_symbols]
+
+          {{[{part, row, col - 1} | inter_parts], nsymbols}, "", col + 1}
+
+        <<part::binary-size(3)>> ->
+          {{[{part, row, col} | inter_parts], inter_symbols}, "", col + 1}
+
+        <<part::binary-size(1), other::binary-size(1)>>
+        when other not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+          nsymbols =
+            if String.equivalent?(other, "."),
+              do: inter_symbols,
+              else: [{row, col} | inter_symbols]
+
+          {{[{part, row, col - 1} | inter_parts], nsymbols}, "", col + 1}
+
+        "." ->
+          {{inter_parts, inter_symbols}, inter_str, col + 1}
+
+        <<symbol::binary-size(1)>>
+        when symbol not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+          {{inter_parts, [{row, col} | inter_symbols]}, "", col + 1}
+
+        _ ->
+          {{inter_parts, inter_symbols}, nstr, col + 1}
+      end
+    end)
+    |> elem(0)
+  end)
+```
+
+## Part 1 Logic
+
+The Logic for this isn't complex, but it's not performant. It's an exhaustive check, on every part Number against every symbol. If I had been smarter with parsing I could've done more pruning, but I went for quick and dirty since the parsing killed me this day.
+
+But it works!
+
+```elixir
+part_list
+|> Enum.filter(fn {p, x, y} ->
+  input_space = for i <- 0..(String.length(p) - 1), do: {x, y - i}
+
+  Enum.any?(symbol_list, fn {sx, sy} ->
+    Enum.any?(input_space, fn {ix, iy} ->
+      abs(ix - sx) <= 1 and abs(iy - sy) <= 1
+    end)
+  end)
+end)
+# |> Enum.count()
+|> Enum.reduce(0, fn {v, _x, _y}, acc -> acc + String.to_integer(v) end)
+```
+
+## Part 2 Parser
+
+I was pretty burned out at this point, so this is just the first parses r, but massaged to only accept `*` as symbols.
+
+```elixir
+{part_list, gear_list} =
+  day_3_input
+  |> String.split("\n")
+  |> Enum.map(&String.to_charlist/1)
+  |> Enum.with_index(0)
+  |> Enum.reduce({[], []}, fn {line, row}, acc ->
+    Enum.reduce(line, {acc, "", 0}, fn char, {{inter_parts, inter_symbols}, inter_str, col} ->
+      nstr = inter_str <> <<char>>
+
+      case nstr do
+        <<part::binary-size(2), other::binary-size(1)>>
+        when other not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+          nsymbols =
+            if not String.equivalent?(other, "*"),
+              do: inter_symbols,
+              else: [{row, col} | inter_symbols]
+
+          {{[{part, row, col - 1} | inter_parts], nsymbols}, "", col + 1}
+
+        <<part::binary-size(3)>> ->
+          {{[{part, row, col} | inter_parts], inter_symbols}, "", col + 1}
+
+        <<part::binary-size(1), other::binary-size(1)>>
+        when other not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+          nsymbols =
+            if not String.equivalent?(other, "*"),
+              do: inter_symbols,
+              else: [{row, col} | inter_symbols]
+
+          {{[{part, row, col - 1} | inter_parts], nsymbols}, "", col + 1}
+
+        "*" ->
+          {{inter_parts, [{row, col} | inter_symbols]}, "", col + 1}
+
+        <<symbol::binary-size(1)>>
+        when symbol not in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "*"] ->
+          {{inter_parts, inter_symbols}, inter_str, col + 1}
+
+        _ ->
+          {{inter_parts, inter_symbols}, nstr, col + 1}
+      end
+    end)
+    |> elem(0)
+  end)
+```
+
+## Part 2 Logic
+
+This is also the naive brute force logic of my first solution, but with an extra filter to get rid of symbols that didn't have exactly two neighbors.
+
+It works!
+
+```elixir
+gear_list
+|> Enum.map(fn {gx, gy} ->
+  part_list
+  |> Enum.filter(fn {p, x, y} ->
+    input_space = for i <- 0..(String.length(p) - 1), do: {x, y - i}
+
+    Enum.any?(input_space, fn {ix, iy} ->
+      abs(ix - gx) <= 1 and abs(iy - gy) <= 1
+    end)
+  end)
+end)
+|> Enum.filter(&(Enum.count(&1) == 2))
+|> Enum.reduce(0, fn [{val1, _, _}, {val2, _, _}], acc ->
+  acc + String.to_integer(val1) * String.to_integer(val2)
+end)
+```
