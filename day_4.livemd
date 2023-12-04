@@ -1,0 +1,91 @@
+<!-- livebook:{"file_entries":[{"name":"day_4_input.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 4
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+```elixir
+day_4_input =
+  Kino.FS.file_path("day_4_input.txt")
+  |> File.read!()
+  |> String.replace("\r", "")
+```
+
+## Part 1 & 2 Parser
+
+The parsing for this day was pretty easy, and reusable.
+
+It just takes the two lists and splits them into a list of lists!
+
+```elixir
+parsed_input =
+  day_4_input
+  |> String.replace(["  ", "   "], " ")
+  |> String.split("\n")
+  |> Enum.map(
+    &(&1
+      |> String.split(": ")
+      |> Enum.at(1)
+      |> String.split(" | ")
+      |> Enum.map(fn str -> String.split(str) end))
+  )
+```
+
+## Part 1 Logic
+
+Pretty trivial problem, only thing of note is that the scoring is equivalent to $$2^{n-1} \ where \ n > 0$$
+
+Elixir doesn't have a native power function, and erlangs power function works with floats, so some wrangling required.
+
+```elixir
+parsed_input
+|> Enum.reduce(0, fn [win_nums, my_nums], acc ->
+  my_nums
+  |> Enum.filter(&(&1 in win_nums))
+  |> Enum.count()
+  |> then(&if &1 == 0, do: 0, else: round(:math.pow(2, &1 - 1)))
+  |> then(&(&1 + acc))
+end)
+```
+
+## Part 2 Logic
+
+I was worried that body recursion would run into performance bottlenecks. So I decided to use an iterative solution.
+
+Since each card can only affect future ones they can be proccessed sequentially. The essential formula is something like the following for each row.
+
+```
+for(offset in 1..number_of_matches) do
+  cards[round_num + offset] += cards[round_num] 
+end
+```
+
+Updating the raw number of cards this way, means we only have to check the number of matches once. thereby squashing the potential problems with runaway body recursion.
+
+```elixir
+win_nums =
+  parsed_input
+  |> Enum.map(fn [win_nums, my_nums] ->
+    my_nums
+    |> Enum.filter(&(&1 in win_nums))
+    |> Enum.count()
+  end)
+
+for c <- 1..length(parsed_input),
+    offset <- 1..Enum.at(win_nums, c - 1),
+    reduce: Map.from_keys(1..length(parsed_input) |> Enum.to_list(), 1) do
+  acc ->
+    if Enum.at(win_nums, c - 1) > 0 do
+      Map.replace!(acc, c + offset, acc[c + offset] + acc[c])
+    else
+      acc
+    end
+end
+|> then(&Enum.sum(Map.values(&1)))
+```
