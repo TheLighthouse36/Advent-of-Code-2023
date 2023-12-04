@@ -1,0 +1,118 @@
+<!-- livebook:{"file_entries":[{"name":"day_2_input.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 2
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+```elixir
+day_2_input =
+  Kino.FS.file_path("day_2_input.txt")
+  |> File.read!()
+```
+
+## Part 1 Parser
+
+This is overly nested, and I wrote it with the assumption that `;` and `,` would have a meaningful difference. But they don't so this is both unidiomatic and overly convluted for what it needs to be. But it works!
+
+It takes the input and parses it into a list of tuples where the tuples are `{id, list_of_game_moves}` to be iterated upon.
+
+```elixir
+parsed_input =
+  day_2_input
+  |> String.replace("\r", "")
+  |> String.split("\n")
+  |> Enum.map(fn str ->
+    str
+    |> String.split(": ")
+    |> then(fn [<<"Game ", rest::binary>>, game] ->
+      {String.to_integer(rest), game}
+    end)
+  end)
+  |> Enum.map(fn {id, str} ->
+    str
+    |> String.split(";", trim: true)
+    |> Enum.map(&String.split(&1, ", ", trim: true))
+    |> Enum.map(fn e ->
+      Enum.map(e, fn sube ->
+        sube
+        |> String.split(" ", trim: true)
+        |> then(fn [val, color] -> {String.to_atom(color), String.to_integer(val)} end)
+      end)
+    end)
+    |> then(&{id, &1})
+  end)
+```
+
+## Part 1 Logic
+
+Pretty simple reduction, adds the id, if it's a valid game, otherwise doesn't. validity is tested with iterative comparisons
+
+```elixir
+max_limit = %{
+  :red => 12,
+  :green => 13,
+  :blue => 14
+}
+
+parsed_input
+|> Enum.reduce(0, fn {id, game}, acc ->
+  game
+  |> Enum.map(fn round ->
+    Enum.any?(round, fn {color, val} -> val > max_limit[color] end)
+  end)
+  |> Enum.any?()
+  |> then(&if &1, do: acc, else: acc + id)
+end)
+```
+
+## Part 2 Parser
+
+Identical to the Part 1 parser except line 17 is a flat_map, since each hand doens't matter, it's just the total balls. This was true in part 1 as well, but I didn't figure that out till later.
+
+```elixir
+parsed_input_part_2 =
+  day_2_input
+  |> String.replace("\r", "")
+  |> String.split("\n")
+  |> Enum.map(fn str ->
+    str
+    |> String.split(": ")
+    |> then(fn [<<"Game ", rest::binary>>, game] ->
+      {String.to_integer(rest), game}
+    end)
+  end)
+  |> Enum.map(fn {id, str} ->
+    str
+    |> String.split(";", trim: true)
+    |> Enum.map(&String.split(&1, ", ", trim: true))
+    |> Enum.flat_map(fn e ->
+      Enum.map(e, fn sube ->
+        sube
+        |> String.split(" ", trim: true)
+        |> then(fn [val, color] -> {String.to_atom(color), String.to_integer(val)} end)
+      end)
+    end)
+    |> then(&{id, &1})
+  end)
+```
+
+## Part 2 Logic
+
+Part 2's logic was simple, it was just a max reduce over all the hands, and an overall sum reduction.
+
+```elixir
+parsed_input_part_2
+|> Enum.reduce(0, fn {_id, game}, acc ->
+  Enum.reduce(game, %{:red => 0, :green => 0, :blue => 0}, fn {color, balls}, acc ->
+    if acc[color] < balls, do: Map.replace!(acc, color, balls), else: acc
+  end)
+  |> Enum.reduce(1, fn {_k, v}, acc -> acc * v end)
+  |> then(&(&1 + acc))
+end)
+```
