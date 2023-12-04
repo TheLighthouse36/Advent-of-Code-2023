@@ -1,0 +1,66 @@
+<!-- livebook:{"file_entries":[{"name":"day_1_input.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 1
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+```elixir
+day_1_input =
+  Kino.FS.file_path("day_1_input.txt")
+  |> File.read!()
+```
+
+## Part 1
+
+Nothing particulary special but as a note for the readers to concate to ascii values in elixir `"#{<<x>>}#{<<y>>}"` turns the asciis to binaries and interpolates them. Not the most readable but it works as a quick and dirty solution.
+
+```elixir
+day_1_input
+|> String.split("\n")
+|> Enum.map(&String.to_charlist/1)
+|> Enum.map(fn list -> Enum.filter(list, &(&1 >= ?0 and &1 <= ?9)) end)
+|> Enum.map(&"#{<<hd(&1)>>}#{<<&1 |> Enum.reverse() |> hd()>>}")
+|> Enum.reduce(0, &(&2 = &2 + String.to_integer(&1)))
+```
+
+## Part 2
+
+Using String replacing was a mistake, a simpler algorithm would have been a left scan and a reverse right scan. But we live and we learn. This solution iteratively goes through the string and replaces as much as possible. and words are replaced with there digit followed by the last character to avoid overlap. Is it pretty? No but it works!
+
+```elixir
+number_map = %{
+  "one" => 1,
+  "two" => 2,
+  "three" => 3,
+  "four" => 4,
+  "five" => 5,
+  "six" => 6,
+  "seven" => 7,
+  "eight" => 8,
+  "nine" => 9
+}
+
+day_1_input
+|> String.split("\n")
+|> Enum.map(fn str ->
+  str
+  |> String.split("", trim: true)
+  |> Enum.reduce("", fn char, outer_acc ->
+    Enum.reduce(number_map, outer_acc <> char, fn {k, v}, acc ->
+      if String.contains?(acc <> char, k),
+        do: String.replace(acc, k, to_string(v)) <> char,
+        else: acc
+    end)
+  end)
+end)
+|> Enum.map(&String.to_charlist/1)
+|> Enum.map(fn list -> Enum.filter(list, &(&1 >= ?0 and &1 <= ?9)) end)
+|> Enum.map(&"#{<<hd(&1)>>}#{<<&1 |> Enum.reverse() |> hd()>>}")
+|> Enum.reduce(0, &(&2 = &2 + String.to_integer(&1)))
+```
