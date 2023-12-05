@@ -1,0 +1,184 @@
+<!-- livebook:{"file_entries":[{"name":"day_5_input.txt","type":"attachment"},{"name":"day_5_sample_input.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 5
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+Added a little bit of upfront parsing to make further parsing clearer.
+
+```elixir
+[<<"seeds: ", seeds::binary>> | day_5_input] =
+  Kino.FS.file_path("day_5_input.txt")
+  |> File.read!()
+  |> String.split("\n\n")
+```
+
+## Parsing
+
+Nothing remarkable about this parser. But at least for this input, the names of the maps are fluff, since they come in a linear order.
+
+```elixir
+parsed_maps =
+  day_5_input
+  |> Enum.map(fn str ->
+    str
+    |> String.split("\n")
+    |> tl()
+    |> Enum.map(fn substr ->
+      substr
+      |> String.split()
+      |> Enum.map(&String.to_integer/1)
+    end)
+  end)
+```
+
+```elixir
+seed_list =
+  seeds
+  |> String.split()
+  |> Enum.map(&String.to_integer/1)
+```
+
+## Part 1
+
+Part 1 was foccussed on the naive solution to the problem. continous mapping over all the seeds. which works totally fine and is realtively clean. I used raw arithmetic to do the mapping and checking rather than maps for speed.
+
+```elixir
+defmodule Seeds do
+  def in_map?(x, [_dest, src, _len]) when x < src, do: false
+  def in_map?(src, [_dest, src, _len]), do: true
+  def in_map?(x, [_dest, src, len]) when x <= src + len, do: true
+  def in_map?(_, _), do: false
+
+  def in_maps?(x, lists), do: Enum.any?(lists, &in_map?(x, &1))
+
+  def transform(x, maps) do
+    if in_maps?(x, maps) do
+      [dest, src, _len] = Enum.find(maps, &in_map?(x, &1))
+      x - src + dest
+    else
+      x
+    end
+  end
+
+  def eval_seeds(seeds, mmaps) do
+    seeds
+    |> Enum.map(fn seed ->
+      Enum.reduce(mmaps, seed, fn map, acc ->
+        transform(acc, map)
+      end)
+    end)
+    |> Enum.min()
+  end
+end
+```
+
+```elixir
+Seeds.eval_seeds(seed_list, parsed_maps)
+```
+
+## Part 2
+
+Dear god this part, It wouldn't have been that bad if I hadn't made so many errors.
+
+For this part the problem is that when you chank the raw inputs there are too many, and the memory allocated on the server I had couldn't even hold that much. So instead I treated the ranges and did the mapping directly. Although I'm not sure my logic is sound, there are a number of off by 1 errors, but it got the right answer for my input.
+
+It runs pretty quick, instant on my machine.
+
+```elixir
+defmodule SeedRange do
+  def rangeSeedRelation([ss, sl], [_md, ms, _ml]) when ss + sl < ms, do: :not_in
+  def rangeSeedRelation([ss, _sl], [_md, ms, ml]) when ss > ms + ml, do: :not_in
+
+  def rangeSeedRelation([ss, sl], [_md, ms, ml])
+      when ss < ms and ss + sl >= ms and ms + ml > ss + sl,
+      do: :partially_in_lower
+
+  def rangeSeedRelation([ss, sl], [_md, ms, ml])
+      when ss >= ms and ss <= ms + ml and ss + sl > ms + ml,
+      do: :partially_in_upper
+
+  def rangeSeedRelation([ss, sl], [_md, ms, ml]) when ss >= ms and ss + sl <= ms + ml,
+    do: :fully_in
+
+  def rangeSeedRelation([ss, sl], [_md, ms, ml]) when ss < ms and ss + sl > ms + ml,
+    do: :encompasses
+
+  def mapSStoMD(ss, ms, md), do: ss - ms + md
+  # This arithmetic isn't sound, off-by-one errors rampant
+  def rangeSeedTransform(seed, _map, :not_in), do: seed
+  def rangeSeedTransform([ss, sl], [md, ms, _ml], :fully_in), do: [mapSStoMD(ss, ms, md), sl]
+
+  def rangeSeedTransform([ss, sl], [md, ms, ml], :partially_in_upper) do
+    {
+      [mapSStoMD(ss, ms, md), ms + ml - ss],
+      [ms + ml, ss + sl - (ms + ml) - 1]
+    }
+  end
+
+  def rangeSeedTransform([ss, sl], [md, ms, _ml], :partially_in_lower) do
+    {
+      [ss, ms - ss - 1],
+      [md, ss + sl - ms]
+    }
+  end
+
+  def rangeSeedTransform([ss, sl], [md, ms, ml], :encompasses) do
+    {
+      [ss, ms - ss - 1],
+      [md, ml],
+      [ms + ml, ss + sl - (ms + ml) - 1]
+    }
+  end
+
+  def rangeTransform(ranges, [next_mmap | rest]), do: rangeTransform(rest, next_mmap, ranges, [])
+  def rangeTransform([], [], untouched, touched), do: Enum.concat(untouched, touched)
+
+  def rangeTransform([head | rest], [], untouched, touched),
+    do: rangeTransform(rest, head, Enum.concat(untouched, touched), [])
+
+  def rangeTransform(mmaps, [head | rest], untouched, touched) do
+    {nu, nt} =
+      Enum.reduce(untouched, {[], touched}, fn seed = [ss, sl], {acc_un, acc_tou} ->
+        case rangeSeedRelation(seed, head) do
+          :fully_in ->
+            {Enum.reject(acc_un, fn [x, y] -> x == ss and y == sl end),
+             [rangeSeedTransform(seed, head, :fully_in) | acc_tou]}
+
+          :partially_in_upper ->
+            {trans, un} = rangeSeedTransform(seed, head, :partially_in_upper)
+            {[un | Enum.reject(acc_un, fn [x, y] -> x == ss and y == sl end)], [trans | acc_tou]}
+
+          :partially_in_lower ->
+            {un, trans} = rangeSeedTransform(seed, head, :partially_in_lower)
+            {[un | Enum.reject(acc_un, fn [x, y] -> x == ss and y == sl end)], [trans | acc_tou]}
+
+          :encompasses ->
+            {unl, trans, unu} = rangeSeedTransform(seed, head, :encompasses)
+
+            {[unl | [unu | Enum.reject(acc_un, fn [x, y] -> x == ss and y == sl end)]],
+             [trans | acc_tou]}
+
+          :not_in ->
+            {[seed | acc_un], acc_tou}
+        end
+      end)
+
+    rangeTransform(mmaps, rest, nu, nt)
+  end
+end
+```
+
+```elixir
+seed_list
+|> Enum.chunk_every(2)
+|> SeedRange.rangeTransform(parsed_maps)
+|> Enum.map(fn [x, _y] -> x end)
+|> Enum.min()
+```
