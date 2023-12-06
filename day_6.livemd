@@ -1,0 +1,76 @@
+<!-- livebook:{"file_entries":[{"name":"day_6_input.txt","type":"attachment"},{"name":"day_6_sample.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 6
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Boilerplate
+
+```elixir
+day_6_input =
+  Kino.FS.file_path("day_6_input.txt")
+  |> File.read!()
+```
+
+## Part 1
+
+Naive Solution for part 1, just check every possible time. Inputs are small enough that performance is fine.
+
+```elixir
+parsed_input =
+  day_6_input
+  |> String.split("\r\n", trim: true)
+  |> Enum.map(&(String.split_at(&1, 11) |> elem(1)))
+  |> Enum.map(&String.split/1)
+  |> Enum.map(&Enum.map(&1, fn x -> String.to_integer(x) end))
+  |> Enum.zip()
+  |> Enum.map(fn {time, distance} ->
+    Enum.count(for t <- 0..time, (time - t) * t > distance, do: t)
+  end)
+  |> Enum.product()
+```
+
+## Part 2
+
+This part was interesting, with my server the naive solution ran out of memory. But I realized that the winning times are in a continous range, so if I found the upper and lower limit of that range I would be golden.
+
+So I implmented a binary search for the lower and for the upper and just subtracted the two values to get the answer.
+
+After reading some solutions I realize that this a quadratic optimaztion problem, which is neat. I did not do anything with this information
+
+```elixir
+defmodule Race do
+  def isWon?(t, time, dist), do: (time - t) * t > dist
+
+  def find_lower(time, dist), do: find_lower(0, time, {time, dist})
+  defp find_lower(lower, upper, {_, _}) when upper - lower == 1, do: upper
+
+  defp find_lower(lower, upper, fix = {time, dist}) do
+    ct = div(lower + upper, 2)
+    if isWon?(ct, time, dist), do: find_lower(lower, ct, fix), else: find_lower(ct, upper, fix)
+  end
+
+  def find_upper(time, dist), do: find_upper(0, time, {time, dist})
+  defp find_upper(lower, upper, {_, _}) when upper - lower == 1, do: upper
+
+  defp find_upper(lower, upper, fix = {time, dist}) do
+    ct = div(lower + upper, 2)
+    if isWon?(ct, time, dist), do: find_upper(ct, upper, fix), else: find_upper(lower, ct, fix)
+  end
+end
+```
+
+```elixir
+day_6_input
+|> String.split("\r\n", trim: true)
+|> Enum.map(&(String.split_at(&1, 11) |> elem(1)))
+|> Enum.map(&String.replace(&1, " ", ""))
+|> Enum.map(&String.to_integer/1)
+|> then(fn [rtime, rdist] ->
+  Race.find_upper(rtime, rdist) - Race.find_lower(rtime, rdist)
+end)
+```
