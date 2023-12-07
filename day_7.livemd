@@ -1,0 +1,155 @@
+<!-- livebook:{"file_entries":[{"name":"day_7_input.txt","type":"attachment"},{"name":"day_7_sample.txt","type":"attachment"}]} -->
+
+# AOC 2023 Day 7
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.11.3"}
+])
+```
+
+## Parsing
+
+Parsing for this day was trivial, Something of note is, in Elixir, String's are not enumerable, so converting them to charlists was the way I chose to rectify that.
+
+```elixir
+day_7_input =
+  Kino.FS.file_path("day_7_input.txt")
+  |> File.read!()
+  |> String.split("\r\n")
+  |> Enum.map(&String.split/1)
+  |> Enum.map(fn [cards, val] -> {String.to_charlist(cards), String.to_integer(val)} end)
+```
+
+## Module
+
+This is where the main logic for this day is, I was pretty sloppy with names, and organization so if it's hard to read that's my fault.
+
+essentially this whole module is implementing a comparison function for sorting the list. The method of comparison is to compare indexes of arrays as an analog for ranking.
+
+To classify the hands I have a cond statement that just goes through the conditions, and it is mainly checking what the maximum frequency of card is and the number of unique cards in the hand. From that information you can derive what kind of hand it is.
+
+Jokers didn't change it that much just added their count to the max_freq and removed them from the orginal list and the logic is essentially identical.
+
+```elixir
+defmodule CamelCards do
+  @hand_ranks [
+    :high_card,
+    :one_pair,
+    :two_pair,
+    :three_of_a_kind,
+    :full_house,
+    :four_of_a_kind,
+    :five_of_a_kind
+  ]
+
+  def card_ranks(), do: "23456789TJQKA" |> String.to_charlist()
+  def joker_ranks(), do: "J23456789TQKA" |> String.to_charlist()
+
+  def getIndex(enum, val), do: Enum.find_index(enum, &(&1 == val))
+
+  def cardsEqual?(card_1, card_2, card_ranks),
+    do: getIndex(card_ranks, card_1) == getIndex(card_ranks, card_2)
+
+  def cardsCompare(card_1, card_2, card_ranks),
+    do: getIndex(card_ranks, card_1) < getIndex(card_ranks, card_2)
+
+  def handsEqual?(hand_1, hand_2),
+    do: getIndex(@hand_ranks, hand_1) == getIndex(@hand_ranks, hand_2)
+
+  def handsCompare(hand_1, hand_2),
+    do: getIndex(@hand_ranks, hand_1) < getIndex(@hand_ranks, hand_2)
+
+  def classifyHand(hand) do
+    frequencies = Enum.frequencies(hand)
+    freq_len = length(Map.values(frequencies))
+    max_freq = Map.values(frequencies) |> Enum.max()
+
+    cond do
+      max_freq == 5 -> {hand, :five_of_a_kind}
+      max_freq == 4 -> {hand, :four_of_a_kind}
+      max_freq == 3 and freq_len == 2 -> {hand, :full_house}
+      max_freq == 3 and freq_len == 3 -> {hand, :three_of_a_kind}
+      max_freq == 2 and freq_len == 3 -> {hand, :two_pair}
+      max_freq == 2 and freq_len == 4 -> {hand, :one_pair}
+      freq_len == 5 -> {hand, :high_card}
+    end
+  end
+
+  def classifyHandJokers(hand) do
+    joker_count = Enum.count(hand, &(&1 == ?J))
+    jokerless_hand = Enum.reject(hand, &(&1 == ?J))
+    frequencies = Enum.frequencies(jokerless_hand)
+    freq_len = length(Map.values(frequencies))
+
+    max_freq =
+      if joker_count == 5 do
+        5
+      else
+        Map.values(frequencies) |> Enum.max() |> then(&(&1 + joker_count))
+      end
+
+    cond do
+      max_freq == 5 -> {hand, :five_of_a_kind}
+      max_freq == 4 -> {hand, :four_of_a_kind}
+      max_freq == 3 and freq_len == 2 -> {hand, :full_house}
+      max_freq == 3 and freq_len == 3 -> {hand, :three_of_a_kind}
+      max_freq == 2 and freq_len == 3 -> {hand, :two_pair}
+      max_freq == 2 and freq_len == 4 -> {hand, :one_pair}
+      freq_len == 5 -> {hand, :high_card}
+      true -> :NYI
+    end
+  end
+
+  def compareHand({hand_1, hand_1_class}, {hand_2, hand_2_class}, card_ranks) do
+    if handsEqual?(hand_1_class, hand_2_class) do
+      compareTiedHand(hand_1, hand_2, card_ranks)
+    else
+      handsCompare(hand_1_class, hand_2_class)
+    end
+  end
+
+  def compareTiedHand(hand_1, hand_2, card_ranks) do
+    Enum.zip(hand_1, hand_2)
+    |> Enum.reduce_while(false, fn {card_1, card_2}, _acc ->
+      if cardsEqual?(card_1, card_2, card_ranks) do
+        {:cont, false}
+      else
+        {:halt, cardsCompare(card_1, card_2, card_ranks)}
+      end
+    end)
+  end
+end
+```
+
+## Part 1
+
+Sort and reduce with an increasing rank.
+
+```elixir
+day_7_input
+|> Enum.map(fn {cards, bid} -> {CamelCards.classifyHand(cards), bid} end)
+|> Enum.sort(fn {hand_1, _}, {hand_2, _} ->
+  CamelCards.compareHand(hand_1, hand_2, CamelCards.card_ranks())
+end)
+|> Enum.reduce({0, 1}, fn {_, bid}, {acc, rank} ->
+  {acc + bid * rank, rank + 1}
+end)
+|> elem(0)
+```
+
+## Part 2
+
+Sort and reduce with an increasing rank.
+
+```elixir
+day_7_input
+|> Enum.map(fn {cards, bid} -> {CamelCards.classifyHandJokers(cards), bid} end)
+|> Enum.sort(fn {hand_1, _}, {hand_2, _} ->
+  CamelCards.compareHand(hand_1, hand_2, CamelCards.joker_ranks())
+end)
+|> Enum.reduce({0, 1}, fn {_, bid}, {acc, rank} ->
+  {acc + bid * rank, rank + 1}
+end)
+|> elem(0)
+```
